@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jev Gate Receipts</title>
+<style>
+  :root {
+    --bg: #f7f7f5; --panel: #ffffff; --text: #1b1b1b; --muted: #6b6b6b; --line: #e3e3de;
+    --ok: #1c7c45; --ok-bg: #e5f4ea; --bad: #b3261e; --bad-bg: #fbe9e7; --accent: #3a3aa8;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #141414; --panel: #1d1d1d; --text: #ececec; --muted: #9a9a9a; --line: #2e2e2e;
+      --ok: #6fd39a; --ok-bg: #173323; --bad: #ff8a80; --bad-bg: #3a1c1a; --accent: #9d9dff;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 960px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 24px; }
+  form { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+  input { flex: 1 1 200px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px;
+          background: var(--panel); color: var(--text); font: inherit; }
+  button { padding: 8px 14px; border: 0; border-radius: 6px; background: var(--accent); color: #fff;
+           font: inherit; cursor: pointer; }
+  .status { color: var(--muted); min-height: 1.5em; margin-bottom: 12px; }
+  .stats { display: flex; gap: 16px; margin-bottom: 16px; color: var(--muted); }
+  .stats b { color: var(--text); }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+          padding: 14px 16px; margin-bottom: 10px; }
+  .row { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  .pill { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; text-transform: uppercase; }
+  .executed { color: var(--ok); background: var(--ok-bg); }
+  .blocked { color: var(--bad); background: var(--bad-bg); }
+  .meta { color: var(--muted); font-size: 13px; }
+  .reason { margin: 6px 0; }
+  .probs { font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted);
+           overflow-wrap: anywhere; }
+  a { color: var(--accent); }
+  details { margin-top: 6px; }
+  pre { margin: 6px 0 0; padding: 8px; background: var(--bg); border-radius: 6px; overflow-x: auto;
+        font-size: 12px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Jev Gate Receipts</h1>
+  <p class="sub">Decisions written to Hedera Consensus Service by hak-jev-plugin, read from the testnet mirror node.</p>
+
+  <form id="form">
+    <input id="topic" placeholder="Topic ID, e.g. 0.0.1234567" pattern="\d+\.\d+\.\d+" required>
+    <button type="submit">Load receipts</button>
+  </form>
+  <div class="status" id="status"></div>
+  <div class="stats" id="stats"></div>
+  <div id="list"></div>
+</main>
+
+<script>
+  const MIRROR = "https://testnet.mirrornode.hedera.com";
+  const $ = (id) => document.getElementById(id);
+
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  })[c]);
+
+  const decode = (b64) => {
+    const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    return new TextDecoder().decode(bytes);
+  };
+
+  const tsToDate = (ts) => new Date(Number(ts.split(".")[0]) * 1000).toLocaleString();
+
+  async function fetchAll(topic) {
+    const messages = [];
+    let url = `${MIRROR}/api/v1/topics/${topic}/messages?order=desc&limit=100`;
+    while (url && messages.length < 500) {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`Mirror node returned HTTP ${res.status}`);
+      const body = await res.json();
+      messages.push(...body.messages);
+      url = body.links && body.links.next ? MIRROR + body.links.next : null;
+    }
+    return messages;
+  }
+
+  function render(topic, messages) {
+    let executed = 0, blocked = 0, other = 0;
+    const cards = messages.map((m) => {
+      let r;
+      try { r = JSON.parse(decode(m.message)); } catch { other++; return ""; }
+      if (!r || !r.decision) { other++; return ""; }
+      r.decision === "executed" ? executed++ : blocked++;
+      const a = r.answers;
+      const probs = a
+        ? `action=${esc(a.action)} P(execute)=${a.p.execute} P(wait)=${a.p.wait} P(abort)=${a.p.abort} slippage_ok=${a.slippage_ok} intent_match=${a.intent_match}`
+        : "no answers (provider failed)";
+      const tx = r.txId
+        ? ` - <a href="https://hashscan.io/testnet/transaction/${encodeURIComponent(r.txId)}" target="_blank" rel="noopener">swap tx</a>`
+        : "";
+      return `<div class="card">
+        <div class="row">
+          <span class="pill ${r.decision === "executed" ? "executed" : "blocked"}">${esc(r.decision)}</span>
+          <strong>${esc(r.tool)}</strong>
+          <span class="meta">#${m.sequence_number} - ${tsToDate(m.consensus_timestamp)} - ${esc(r.provider)} (${esc(r.model)}) - ${esc(r.latencyMs)} ms</span>
+        </div>
+        <div class="reason">${esc(r.reason)}</div>
+        <div class="probs">${probs}</div>
+        <div class="meta">account ${esc(r.accountId)} - params ${esc(String(r.paramsHash).slice(0, 12))}...${tx}
+          - <a href="https://hashscan.io/testnet/transaction/${m.consensus_timestamp}" target="_blank" rel="noopener">receipt on HashScan</a></div>
+        <details><summary class="meta">raw receipt</summary><pre>${esc(JSON.stringify(r, null, 2))}</pre></details>
+      </div>`;
+    });
+    $("stats").innerHTML = `<span><b>${executed}</b> executed</span><span><b>${blocked}</b> blocked</span>` +
+      (other ? `<span><b>${other}</b> other messages</span>` : "") +
+      `<a href="https://hashscan.io/testnet/topic/${topic}" target="_blank" rel="noopener">topic on HashScan</a>`;
+    $("list").innerHTML = cards.join("") || "<p class='meta'>No receipts on this topic yet.</p>";
+  }
+
+  async function load(topic) {
+    $("status").textContent = `Loading ${topic}...`;
+    $("list").innerHTML = ""; $("stats").innerHTML = "";
+    try {
+      const messages = await fetchAll(topic);
+      render(topic, messages);
+      $("status").textContent = `${messages.length} messages, newest first.`;
+      history.replaceState(null, "", `?topic=${topic}`);
+    } catch (e) {
+      $("status").textContent = `Could not load: ${e.message}`;
+    }
+  }
+
+  $("form").addEventListener("submit", (e) => { e.preventDefault(); load($("topic").value.trim()); });
+  const initial = new URLSearchParams(location.search).get("topic");
+  if (initial) { $("topic").value = initial; load(initial); }
+</script>
+</body>
+</html>

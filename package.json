@@ -1,0 +1,75 @@
+{
+  "name": "hak-jev-plugin",
+  "version": "0.1.0",
+  "description": "AI decision gate for Hedera Agent Kit tool calls. Jev judges, HAK executes, HCS notarizes.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Juan Gomez (jmgomezl)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jmgomezl/hak-jev-plugin.git"
+  },
+  "homepage": "https://github.com/jmgomezl/hak-jev-plugin#readme",
+  "bugs": {
+    "url": "https://github.com/jmgomezl/hak-jev-plugin/issues"
+  },
+  "keywords": [
+    "hedera",
+    "hedera-agent-kit",
+    "hak-plugin",
+    "policy",
+    "guardrails",
+    "typesafe",
+    "jev",
+    "hcs",
+    "audit",
+    "saucerswap"
+  ],
+  "main": "dist/index.cjs",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist", "README.md", "LICENSE"],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "lint": "biome check .",
+    "format": "biome format . --write",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "create-topic": "tsx scripts/create-topic.ts",
+    "demo": "tsx scripts/demo.ts",
+    "prepublishOnly": "npm run build"
+  },
+  "peerDependencies": {
+    "@hashgraph/hedera-agent-kit": "^4.0.0",
+    "@hiero-ledger/sdk": "^2.84.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.0",
+    "@hashgraph/hedera-agent-kit": "^4.1.0",
+    "@hiero-ledger/sdk": "^2.89.0",
+    "@types/node": "^20.11.0",
+    "dotenv": "^16.4.0",
+    "ethers": "^6.17.0",
+    "long": "^5.3.2",
+    "tsup": "^8.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.3.0",
+    "vitest": "^1.0.0",
+    "zod": "^3.25.76"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
