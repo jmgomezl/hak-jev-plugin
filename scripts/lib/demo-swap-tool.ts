@@ -53,6 +53,17 @@ const mirrorCall = async (to: string, data: string): Promise<string> => {
   return body.result;
 };
 
+/**
+ * Where the router should send the output. Accounts with an EVM alias (ECDSA keys) must
+ * receive at the alias; the long-zero address makes the HTS transfer revert
+ * ("Safe token transfer failed!").
+ */
+const recipientAddress = async (accountId: string): Promise<string> => {
+  const response = await fetch(`${MIRROR}/api/v1/accounts/${accountId}`);
+  const body = (await response.json()) as { evm_address?: string };
+  return body.evm_address ?? evmAddress(accountId);
+};
+
 const toUnits = (amount: string, decimals: number): bigint => {
   const [whole = "0", fraction = ""] = amount.split(".");
   return BigInt(whole + fraction.padEnd(decimals, "0").slice(0, decimals));
@@ -137,7 +148,7 @@ export class DemoSaucerSwapTool extends BaseTool<Params, Params> {
         new ContractFunctionParameters()
           .addUint256(Long.fromString(minOut.toString(), true))
           .addAddressArray(path)
-          .addAddress(evmAddress(operator))
+          .addAddress(await recipientAddress(operator))
           .addUint256(Long.fromString(deadline.toString(), true)),
       );
 

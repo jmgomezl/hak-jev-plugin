@@ -40,11 +40,15 @@ agent calls saucerswap_swap_tokens
   |                  ask    = Jev (or rules), 2 s timeout
   |                  decide = P(execute), P(slippage_ok), P(intent_match) >= 0.7 ?
   |                  no  -> HCS receipt "blocked", throw, agent gets the reason
+  |                  yes -> gate sets the swap's transaction id, HCS receipt "executed"
   |
-  [secondary]      tx is signed and submitted
-  |
-  [post tool]      HCS receipt "executed" with the transaction id
+  [secondary]      tx is signed and submitted with that id
 ```
+
+In `AUTONOMOUS` mode the receipt is written **before** the swap is submitted, with the transaction
+id the swap will carry. A decision is on chain even if the submission then fails, and the swap's
+outcome is one click away on HashScan. In other modes (`RETURN_BYTES`, custom strategies) the gate
+cannot choose the id, so it writes the receipt after the tool returns, with `txId` and `txStatus`.
 
 ### Questions (v0, fixed)
 
@@ -101,8 +105,7 @@ would go over, only the free-text `reason` is shortened.
   "decision": "executed",
   "reason": "all checks >= 0.7",
   "latencyMs": 312,
-  "txId": "0.0.1234567@1790712843.120000000",
-  "txStatus": "SUCCESS"
+  "txId": "0.0.1234567@1790712843.120000000"
 }
 ```
 
@@ -216,7 +219,8 @@ the published package.
 mirror node, base64-decodes it and lists executed and blocked decisions with HashScan links.
 
 ```bash
-open "web/receipts.html?topic=0.0.1234567"
+python3 -m http.server 8787 --directory web
+# then open http://localhost:8787/receipts.html?topic=0.0.1234567
 ```
 
 ## Environment variables
@@ -255,8 +259,10 @@ and receipt size under 1024 bytes.
   does not fetch extra market data.
 - **Rules cannot read language.** `RulesProvider` only checks that both tokens appear in the
   instruction, and answers yes when there is no instruction.
-- **Missing receipt on submit failure.** If the swap passes the gate but the submission throws, HAK
-  skips post-tool hooks, so no `executed` receipt is written for that call.
+- **`executed` means released, not settled.** In `AUTONOMOUS` mode the receipt is written just before
+  submission. Check the swap's own status on HashScan through `txId`.
+- **Non-autonomous modes** write the receipt after the tool returns. If the submission throws there,
+  HAK skips post-tool hooks and that call has no receipt.
 - **Receipts are best effort.** If publishing to HCS fails, the error is logged and the decision
   stands, the same as HAK's `HcsAuditTrailHook`.
 - **Jev accuracy** is best in English, and answers behind `jev-latest` change when TypeSafe ships a

@@ -1,5 +1,5 @@
 import { BaseTool, type Context } from "@hashgraph/hedera-agent-kit";
-import type { Client } from "@hiero-ledger/sdk";
+import { AccountId, type Client, ContractExecuteTransaction } from "@hiero-ledger/sdk";
 import { z } from "zod";
 import type { PublishedReceipt, ReceiptSink } from "../src/hcs";
 import type { GateAnswers, GateProvider, ProviderResult, SwapGateState } from "../src/types";
@@ -23,14 +23,25 @@ export class FakeSwapTool extends BaseTool<Params, Params> {
   async normalizeParams(params: Params) {
     return schema.parse(params);
   }
+  lastTransaction: ContractExecuteTransaction | null = null;
+
+  constructor(private readonly options: { realTx?: boolean; failSubmit?: boolean } = {}) {
+    super();
+  }
+
   async coreAction() {
+    const transaction = this.options.realTx ? new ContractExecuteTransaction() : {};
+    this.lastTransaction = this.options.realTx ? (transaction as ContractExecuteTransaction) : null;
     return {
-      transaction: {},
+      transaction,
       extras: { estimatedOutput: "12.5", minOutput: "1243", priceImpact: 0.2, route: ["A", "B"] },
     };
   }
   override async secondaryAction() {
     this.submitted += 1;
+    if (this.options.failSubmit) {
+      throw new Error("CONTRACT_REVERT_EXECUTED");
+    }
     return {
       raw: { status: "SUCCESS", transactionId: "0.0.1234@1700000000.000000001" },
       humanMessage: "swapped",
@@ -40,6 +51,10 @@ export class FakeSwapTool extends BaseTool<Params, Params> {
 
 export const fakeClient = {
   operatorAccountId: { toString: () => "0.0.1234" },
+} as unknown as Client;
+
+export const realClient = {
+  operatorAccountId: AccountId.fromString("0.0.1234"),
 } as unknown as Client;
 
 export const contextWith = (hooks: Context["hooks"]): Context => ({ hooks }) as Context;

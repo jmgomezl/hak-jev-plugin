@@ -1,9 +1,10 @@
 import {
   AbstractPolicy,
+  AgentMode,
   type PostCoreActionParams,
   type PostSecondaryActionParams,
 } from "@hashgraph/hedera-agent-kit";
-import type { Client } from "@hiero-ledger/sdk";
+import { type Client, TransactionId } from "@hiero-ledger/sdk";
 import { type GateConfig, type GateConfigInput, resolveGateConfig } from "./config";
 import { decide } from "./decide";
 import { HcsReceiptSink, type PublishedReceipt, type ReceiptSink } from "./hcs";
@@ -201,6 +202,15 @@ export class JevGatePolicy extends AbstractPolicy {
       throw new GateBlockedError(method, verdict.reason);
     }
 
+    // Autonomous mode: fix the swap's transaction id now and notarize before it is submitted,
+    // so the receipt exists even if the submission later fails.
+    const txId = preassignTransactionId(params);
+    if (txId) {
+      await this.emit({ ...base, decision: "executed", txId }, params.client);
+      return false;
+    }
+
+    // Other modes: wait for the tool result and write the receipt with its transaction id.
     const queue = this.pending.get(base.paramsHash) ?? [];
     queue.push({ receipt: base });
     this.pending.set(base.paramsHash, queue);
@@ -252,6 +262,31 @@ export class JevGatePolicy extends AbstractPolicy {
     this.onDecision?.({ receipt, published, publishError });
   }
 }
+
+/**
+ * In AUTONOMOUS mode the agent's own operator signs and pays, so the gate can set the
+ * transaction id before submission. Returns null in any other mode, or when the core
+ * payload is not an unfrozen SDK transaction.
+ */
+const preassignTransactionId = (params: PostCoreActionParams): string | null => {
+  const mode = params.context?.mode;
+  if (mode !== undefined && mode !== AgentMode.AUTONOMOUS) {
+    return null;
+  }
+  const operator = params.client?.operatorAccountId;
+  const tx = (params.coreActionResult as { transaction?: unknown }).transaction as
+    | { transactionId?: TransactionId | null; setTransactionId?: (id: TransactionId) => unknown }
+    | undefined;
+  if (!operator || typeof tx?.setTransactionId !== "function") {
+    return null;
+  }
+  if (tx.transactionId) {
+    return tx.transactionId.toString();
+  }
+  const id = TransactionId.generate(operator);
+  tx.setTransactionId(id);
+  return id.toString();
+};
 
 /** Shape the tool's params and quote into the state sent to the provider. */
 export const buildSwapState = (

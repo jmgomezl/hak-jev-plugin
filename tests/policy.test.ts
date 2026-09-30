@@ -1,3 +1,4 @@
+import { AgentMode, type Context } from "@hashgraph/hedera-agent-kit";
 import { describe, expect, it } from "vitest";
 import { JevGatePolicy } from "../src/policy";
 import { RulesProvider } from "../src/providers/rules";
@@ -10,6 +11,7 @@ import {
   contextWith,
   emptyEnv,
   fakeClient,
+  realClient,
   swapParams,
 } from "./helpers";
 
@@ -186,5 +188,44 @@ describe("JevGatePolicy", () => {
 
   it("rejects non-testnet networks", () => {
     expect(() => new JevGatePolicy({}, { HEDERA_NETWORK: "mainnet" })).toThrow(/testnet only/);
+  });
+  it("notarizes before submission in autonomous mode, so a failed submit still has a receipt", async () => {
+    const sink = new MemorySink();
+    const provider = new MockProvider(async () => ({
+      model: "m",
+      answers: answers(0.9, 0.9, 0.9),
+    }));
+    const policy = new JevGatePolicy({ provider, sink }, emptyEnv);
+    const tool = new FakeSwapTool({ realTx: true, failSubmit: true });
+
+    const result = await tool.execute(realClient, contextWith([policy]), swapParams);
+
+    expect(tool.submitted).toBe(1);
+    expect(result.raw.status).toBe("ERROR");
+    expect(sink.messages).toHaveLength(1);
+    const receipt = lastReceipt(sink);
+    expect(receipt.decision).toBe("executed");
+    expect(receipt.txId).toMatch(/^0\.0\.1234@\d+\.\d+$/);
+    expect(receipt.txId).toBe(tool.lastTransaction?.transactionId?.toString());
+  });
+
+  it("keeps the post-execution receipt outside autonomous mode", async () => {
+    const sink = new MemorySink();
+    const provider = new MockProvider(async () => ({
+      model: "m",
+      answers: answers(0.9, 0.9, 0.9),
+    }));
+    const policy = new JevGatePolicy({ provider, sink }, emptyEnv);
+    const tool = new FakeSwapTool({ realTx: true });
+    const context = { hooks: [policy], mode: AgentMode.RETURN_BYTES } as Context;
+
+    await tool.execute(realClient, context, swapParams);
+
+    expect(tool.lastTransaction?.transactionId).toBeNull();
+    expect(lastReceipt(sink)).toMatchObject({
+      decision: "executed",
+      txId: "0.0.1234@1700000000.000000001",
+      txStatus: "SUCCESS",
+    });
   });
 });
