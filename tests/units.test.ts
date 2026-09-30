@@ -152,6 +152,11 @@ describe("JevProvider", () => {
     expect(Object.keys(body.questions)).toEqual(["action", "slippage_ok", "intent_match"]);
     expect(body.questions.action.type).toBe("choice");
     expect(body.questions.slippage_ok.type).toBe("noul");
+    // Explicit limits are what make Jev reject a high slippage tolerance (see 0.1.1).
+    expect(
+      body.questions.slippage_ok.instructions.limits.slippage_tolerance_percent.unacceptable,
+    ).toBe("above 5");
+    expect(body.questions.action.instructions.limits).toBeDefined();
     expect(body.state.userInstruction).toBe("swap 10 HBAR for SAUCE");
     expect(result).toEqual({
       model: "jev-1.13.0",

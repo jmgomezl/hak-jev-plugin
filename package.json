@@ -1,6 +1,6 @@
 {
   "name": "hak-jev-plugin",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "AI decision gate for Hedera Agent Kit tool calls. Jev judges, HAK executes, HCS notarizes.",
   "type": "module",
   "license": "MIT",

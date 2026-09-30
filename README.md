@@ -58,6 +58,12 @@ cannot choose the id, so it writes the receipt after the tool returns, with `txI
 | `slippage_ok`  | Noul (yes/no probability)        | Is the expected slippage acceptable for this size?     |
 | `intent_match` | Noul (yes/no probability)        | Does the call match the user's stated instruction?     |
 
+`action` and `slippage_ok` carry explicit limits in their instructions, following TypeSafe's advice
+to encode domain rules in the question: slippage tolerance normal up to 1%, high up to 3%,
+unacceptable above 5%; price impact normal below 1%, unacceptable above 5%. These match the
+`RulesProvider` defaults, so both providers draw the line in the same place. With `jev-1.13.0` a 50%
+tolerance scores `slippage_ok` 0.02 and a 0.5% tolerance scores 0.99.
+
 The gate executes only if `P(execute)`, `slippage_ok` and `intent_match` are all at or above
 `GATE_THRESHOLD` (default `0.7`). Otherwise it blocks and returns every failed check to the agent,
 for example:
